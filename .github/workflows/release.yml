@@ -120,7 +120,20 @@ jobs:
             exit 1
           fi
 
-          RELEASE_DATA=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,tagName,targetCommitish)
+          RELEASE_DATA=""
+          for attempt in $(seq 1 12); do
+            if RELEASE_DATA=$(gh release view "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,tagName,targetCommitish 2>/dev/null); then
+              break
+            fi
+            echo "Draft $RELEASE_TAG is not visible yet; retrying ($attempt/12)."
+            sleep 5
+          done
+          if [ -z "$RELEASE_DATA" ]; then
+            echo "::error::Semantic release draft $RELEASE_TAG did not become visible."
+            exit 1
+          fi
           if [ "$(jq -r .tagName <<< "$RELEASE_DATA")" != "$RELEASE_TAG" ]; then
             echo "::error::Draft release tag does not match $RELEASE_TAG."
             exit 1

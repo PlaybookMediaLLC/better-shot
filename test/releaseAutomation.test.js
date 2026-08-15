@@ -25,6 +25,10 @@ function pluginOptions(name) {
   return Array.isArray(entry) ? entry[1] : undefined;
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 test("semantic-release maps Conventional Commits into draft releases", () => {
   assert.deepEqual(releaseConfig.branches, ["main"]);
   assert.equal(releaseConfig.tagFormat, "v${version}");
@@ -42,6 +46,11 @@ test("semantic-release maps Conventional Commits into draft releases", () => {
 });
 
 test("release preparation synchronizes every version source and changelog", async () => {
+  const currentVersion = require("../version.json");
+  const versionParts = currentVersion.version.split(".").map(Number);
+  versionParts[2] += 1;
+  const nextVersion = versionParts.join(".");
+  const nextBuild = currentVersion.build + 1;
   const fixture = await fsPromises.mkdtemp(path.join(os.tmpdir(), "better-shot-release-"));
   const files = [
     "CHANGELOG.md",
@@ -62,8 +71,8 @@ test("release preparation synchronizes every version source and changelog", asyn
       cwd: fixture,
       logger: { log() {} },
       nextRelease: {
-        version: "0.3.8",
-        notes: "## 0.3.8 (2026-08-15)\n\n### Bug Fixes\n\n* prove release preparation",
+        version: nextVersion,
+        notes: `## ${nextVersion} (2026-08-15)\n\n### Bug Fixes\n\n* prove release preparation`,
       },
     }
   );
@@ -76,14 +85,21 @@ test("release preparation synchronizes every version source and changelog", asyn
   );
   const changelog = await fsPromises.readFile(path.join(fixture, "CHANGELOG.md"), "utf8");
 
-  assert.deepEqual(version, { version: "0.3.8", build: 11, minimumOS: "14.0" });
-  assert.match(projectDefinition, /MARKETING_VERSION: "0\.3\.8"/);
-  assert.match(projectDefinition, /CURRENT_PROJECT_VERSION: "11"/);
-  assert.equal((xcodeProject.match(/MARKETING_VERSION = 0\.3\.8;/g) || []).length, 2);
-  assert.equal((xcodeProject.match(/CURRENT_PROJECT_VERSION = 11;/g) || []).length, 2);
-  assert.ok(changelog.startsWith(`${releasePrepare.CHANGELOG_TITLE}\n\n## [0.3.8] - `));
+  assert.deepEqual(version, { version: nextVersion, build: nextBuild, minimumOS: "14.0" });
+  assert.match(projectDefinition, new RegExp(`MARKETING_VERSION: "${escapeRegExp(nextVersion)}"`));
+  assert.match(projectDefinition, new RegExp(`CURRENT_PROJECT_VERSION: "${nextBuild}"`));
+  assert.equal(
+    (xcodeProject.match(new RegExp(`MARKETING_VERSION = ${escapeRegExp(nextVersion)};`, "g")) || [])
+      .length,
+    2
+  );
+  assert.equal(
+    (xcodeProject.match(new RegExp(`CURRENT_PROJECT_VERSION = ${nextBuild};`, "g")) || []).length,
+    2
+  );
+  assert.ok(changelog.startsWith(`${releasePrepare.CHANGELOG_TITLE}\n\n## [${nextVersion}] - `));
   assert.match(changelog, /### Bug Fixes\n\n- prove release preparation/);
-  assert.match(changelog, /## \[0\.3\.7\] - 2026-06-07/);
+  assert.match(changelog, new RegExp(`## \\[${escapeRegExp(currentVersion.version)}\\] - `));
 });
 
 test("successful main tests are the only automatic release trigger", () => {
@@ -104,6 +120,7 @@ test("stable publication requires main ancestry, a matching draft, and Apple cre
   assert.match(releaseWorkflow, /Release commit changed files outside the semantic-release allowlist/);
   assert.match(releaseWorkflow, /git merge-base --is-ancestor "\$TAG_SHA" origin\/main/);
   assert.match(releaseWorkflow, /must still be a draft before artifact publication/);
+  assert.match(releaseWorkflow, /Draft \$RELEASE_TAG is not visible yet; retrying/);
   assert.match(releaseWorkflow, /APPLE_CERTIFICATE_BASE64/);
   assert.match(releaseWorkflow, /APPLE_API_KEY_BASE64/);
   assert.match(releaseWorkflow, /xcrun notarytool submit/);
