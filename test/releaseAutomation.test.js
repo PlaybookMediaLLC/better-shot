@@ -82,7 +82,7 @@ test("release preparation synchronizes every version source and changelog", asyn
   assert.equal((xcodeProject.match(/MARKETING_VERSION = 0\.3\.8;/g) || []).length, 2);
   assert.equal((xcodeProject.match(/CURRENT_PROJECT_VERSION = 11;/g) || []).length, 2);
   assert.ok(changelog.startsWith(`${releasePrepare.CHANGELOG_TITLE}\n\n## [0.3.8] - `));
-  assert.match(changelog, /### Bug Fixes\n\n\* prove release preparation/);
+  assert.match(changelog, /### Bug Fixes\n\n- prove release preparation/);
   assert.match(changelog, /## \[0\.3\.7\] - 2026-06-07/);
 });
 

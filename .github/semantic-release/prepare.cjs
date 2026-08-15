@@ -22,6 +22,7 @@ function releaseNotesBody(notes) {
   return notes
     .trim()
     .replace(/^##[^\n]*\n+/, "")
+    .replace(/^[ \t]*\* /gm, "- ")
     .trim();
 }
 
