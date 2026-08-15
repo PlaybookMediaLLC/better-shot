@@ -33,5 +33,8 @@ build-x86_64/
 # Local scripts
 scripts/
 
+# Release tooling dependencies
+.github/semantic-release/node_modules/
+
 # Claude Code
 CLAUDE.md
