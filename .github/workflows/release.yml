@@ -131,27 +131,6 @@ jobs:
           fi
           echo "release_sha=$TAG_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Require complete Apple signing secrets
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          missing=()
-          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
-            if [ -z "${!name}" ]; then
-              missing+=("$name")
-            fi
-          done
-          if [ "${#missing[@]}" -ne 0 ]; then
-            printf '::error::Missing Apple release secrets: %s\n' "${missing[*]}"
-            exit 1
-          fi
-          echo "All Apple signing and notarization secrets are configured."
-
       - name: Read build number
         id: version
         run: |
@@ -162,13 +141,13 @@ jobs:
           fi
           echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
 
-  build-macos:
+  build-unsigned:
     needs: prepare-release
     runs-on: macos-latest
     permissions:
       actions: read
       contents: read
-    timeout-minutes: 60
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -207,32 +186,107 @@ jobs:
           test "$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleVersion)" = "$BUILD_NUMBER"
           ARCHITECTURES=$(lipo -archs "$APP_PATH/Contents/MacOS/BetterShot")
           test "$ARCHITECTURES" = "${{ matrix.arch }}"
-          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          ARCHIVE_PATH="$RUNNER_TEMP/BetterShot-$RELEASE_VERSION-${{ matrix.arch }}-unsigned.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARCHIVE_PATH"
 
-      - name: Import Developer ID certificate and notarization key
+      - name: Upload unsigned ${{ matrix.arch }} app
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: better-shot-unsigned-${{ matrix.arch }}
+          path: ${{ runner.temp }}/BetterShot-${{ inputs.version }}-${{ matrix.arch }}-unsigned.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  sign-notarize:
+    needs: [prepare-release, build-unsigned]
+    runs-on: macos-latest
+    environment: apple-release
+    permissions:
+      actions: read
+      contents: read
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+
+    steps:
+      - name: Download unsigned ${{ matrix.arch }} app
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: better-shot-unsigned-${{ matrix.arch }}
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Validate unsigned app and materialize fixed entitlements
+        env:
+          BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
+        run: |
+          ARCHIVE_PATH="$RUNNER_TEMP/unsigned/BetterShot-$RELEASE_VERSION-${{ matrix.arch }}-unsigned.zip"
+          EXTRACT_DIR="$RUNNER_TEMP/unsigned-app"
+          test -f "$ARCHIVE_PATH"
+          mkdir -p "$EXTRACT_DIR"
+          ditto -x -k "$ARCHIVE_PATH" "$EXTRACT_DIR"
+          APP_PATH="$EXTRACT_DIR/BetterShot.app"
+          test -d "$APP_PATH"
+          test "$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleShortVersionString)" = "$RELEASE_VERSION"
+          test "$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleVersion)" = "$BUILD_NUMBER"
+          ARCHITECTURES=$(lipo -archs "$APP_PATH/Contents/MacOS/BetterShot")
+          test "$ARCHITECTURES" = "${{ matrix.arch }}"
+
+          ENTITLEMENTS_PATH="$RUNNER_TEMP/BetterShot.entitlements"
+          cat > "$ENTITLEMENTS_PATH" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict/>
+          </plist>
+          PLIST
+          {
+            echo "APP_PATH=$APP_PATH"
+            echo "ENTITLEMENTS_PATH=$ENTITLEMENTS_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Require complete Apple signing secrets
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=()
+          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error::Missing Apple release secrets: %s\n' "${missing[*]}"
+            exit 1
+          fi
+          echo "All Apple signing and notarization secrets are configured."
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           CERTIFICATE_PATH="$RUNNER_TEMP/better-shot-developer-id.p12"
-          API_KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
           KEYCHAIN_PATH="$RUNNER_TEMP/better-shot-signing.keychain-db"
           KEYCHAIN_PASSWORD=$(openssl rand -hex 24)
 
           printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-          printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$API_KEY_PATH"
-          chmod 600 "$CERTIFICATE_PATH" "$API_KEY_PATH"
+          chmod 600 "$CERTIFICATE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security import "$CERTIFICATE_PATH" \
             -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A \
             -T /usr/bin/codesign \
-            -T /usr/bin/security \
             -k "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security set-key-partition-list \
             -S apple-tool:,apple:,codesign: \
@@ -249,7 +303,6 @@ jobs:
           fi
 
           {
-            echo "APPLE_API_KEY=$API_KEY_PATH"
             echo "KEYCHAIN_PATH=$KEYCHAIN_PATH"
             echo "SIGNING_IDENTITY=$SIGNING_IDENTITY"
           } >> "$GITHUB_ENV"
@@ -275,7 +328,7 @@ jobs:
             --force \
             --options runtime \
             --timestamp \
-            --entitlements Resources/BetterShot.entitlements \
+            --entitlements "$ENTITLEMENTS_PATH" \
             --sign "$SIGNING_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" \
             "$APP_PATH"
@@ -287,6 +340,7 @@ jobs:
 
       - name: Create, sign, and notarize ${{ matrix.arch }} DMG
         env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
@@ -311,12 +365,18 @@ jobs:
             "$DMG_PATH"
           codesign --verify --verbose=2 "$DMG_PATH"
 
+          API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$API_KEY_PATH"
+          chmod 600 "$API_KEY_PATH"
+          trap 'rm -f "$API_KEY_PATH"' EXIT
           xcrun notarytool submit "$DMG_PATH" \
-            --key "$APPLE_API_KEY" \
+            --key "$API_KEY_PATH" \
             --key-id "$APPLE_API_KEY_ID" \
             --issuer "$APPLE_API_ISSUER" \
             --wait \
             --timeout 30m
+          rm -f "$API_KEY_PATH"
+          trap - EXIT
           xcrun stapler staple "$DMG_PATH"
           xcrun stapler validate "$DMG_PATH"
           spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
@@ -329,7 +389,7 @@ jobs:
       - name: Upload notarized ${{ matrix.arch }} artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: better-shot-${{ matrix.arch }}
+          name: better-shot-notarized-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/release-${{ matrix.arch }}/*.dmg
             ${{ runner.temp }}/release-${{ matrix.arch }}/*.sha256
@@ -345,7 +405,7 @@ jobs:
 
   publish-release:
     if: inputs.publish_release
-    needs: [prepare-release, build-macos]
+    needs: [prepare-release, sign-notarize]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -360,7 +420,7 @@ jobs:
       - name: Download notarized artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: better-shot-*
+          pattern: better-shot-notarized-*
           path: release
           merge-multiple: true
 
@@ -386,6 +446,7 @@ jobs:
             SHA256SUMS | LC_ALL=C sort)
 
           revalidate_draft() {
+            mode=${1:-subset}
             git fetch origin main --tags --force
             remote_tag_sha=$(git rev-list -n1 "$RELEASE_TAG")
             if [ "$remote_tag_sha" != "$EXPECTED_RELEASE_SHA" ]; then
@@ -407,6 +468,11 @@ jobs:
             if [ -n "$unexpected_assets" ]; then
               echo "::error::Draft contains unexpected assets:"
               printf '%s\n' "$unexpected_assets"
+              exit 1
+            fi
+            if [ "$mode" = "exact" ] && [ "$existing_assets" != "$expected_assets" ]; then
+              echo "::error::Draft asset set changed before publication."
+              diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$existing_assets") || true
               exit 1
             fi
           }
@@ -432,7 +498,7 @@ jobs:
             exit 1
           fi
 
-          revalidate_draft
+          revalidate_draft exact
           gh release edit "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Better Shot $RELEASE_TAG" \

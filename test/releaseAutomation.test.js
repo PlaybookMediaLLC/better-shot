@@ -109,15 +109,21 @@ test("stable publication requires main ancestry, a matching draft, and Apple cre
   assert.match(releaseWorkflow, /xcrun notarytool submit/);
   assert.match(releaseWorkflow, /xcrun stapler validate/);
   assert.match(releaseWorkflow, /arch: \[arm64, x86_64\]/);
-  assert.match(releaseWorkflow, /needs: \[prepare-release, build-macos\]/);
+  assert.match(releaseWorkflow, /needs: \[prepare-release, build-unsigned\]/);
+  assert.match(releaseWorkflow, /needs: \[prepare-release, sign-notarize\]/);
   assert.ok(
     releaseWorkflow.indexOf("Build unsigned ${{ matrix.arch }} app") <
-      releaseWorkflow.indexOf("Import Developer ID certificate and notarization key")
+      releaseWorkflow.indexOf("Import Developer ID certificate")
   );
   assert.match(releaseWorkflow, /CODE_SIGNING_ALLOWED=NO/);
   assert.match(releaseWorkflow, /persist-credentials: false/);
+  assert.match(releaseWorkflow, /environment: apple-release/);
+  assert.match(releaseWorkflow, /name: better-shot-unsigned-/);
+  assert.match(releaseWorkflow, /pattern: better-shot-notarized-/);
+  assert.doesNotMatch(releaseWorkflow, /security import[\s\S]*?-A/);
   assert.match(releaseWorkflow, /Tag \$RELEASE_TAG moved/);
   assert.match(releaseWorkflow, /Remote release asset set is incomplete or unexpected/);
+  assert.match(releaseWorkflow, /revalidate_draft exact/);
   assert.match(releaseWorkflow, /--draft=false/);
 });
 

@@ -21,8 +21,10 @@ The semantic workflow then calls the reusable **Release** workflow directly. Rel
 successful test commit to be the exact parent of the generated release commit, permits only the four
 generated version and changelog files in that commit, and refuses mismatched versions, moved tags,
 public releases, missing drafts, and incomplete Apple secret sets. Apple Silicon and Intel builds run
-independently. Each architecture is compiled before Apple credentials are installed, then signed with
-the Developer ID certificate, packaged into a signed DMG, submitted to Apple, stapled, and verified.
+independently. Each architecture is compiled without secrets and uploaded from an unprivileged runner.
+A fresh runner in the `apple-release` environment downloads the unsigned app without checking out or
+executing repository code, then signs it with the Developer ID certificate, packages it into a signed
+DMG, submits it to Apple, staples it, and verifies it.
 The draft and exact remote asset set are revalidated immediately before upload and publication.
 
 A failed artifact build leaves the tag and draft intact. Use **Re-run failed jobs** on the original
