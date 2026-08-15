@@ -17,14 +17,16 @@ When a release is required, the workflow updates `version.json`, `project.yml`, 
 project, and `CHANGELOG.md`. It commits those generated files with `[skip ci]`, creates the matching
 tag, and opens a draft GitHub release containing generated notes.
 
-The semantic workflow then dispatches **Release** at that exact tag. Release refuses commits outside
-`main`, mismatched versions or tags, public releases, missing drafts, and incomplete Apple secret
-sets. Apple Silicon and Intel builds run independently. Each app is signed with the Developer ID
-certificate, packaged into a signed DMG, submitted to Apple, stapled, and verified. The draft is
-published only after both notarized DMGs and their checksums are present.
+The semantic workflow then calls the reusable **Release** workflow directly. Release requires the
+successful test commit to be the exact parent of the generated release commit, permits only the four
+generated version and changelog files in that commit, and refuses mismatched versions, moved tags,
+public releases, missing drafts, and incomplete Apple secret sets. Apple Silicon and Intel builds run
+independently. Each architecture is compiled before Apple credentials are installed, then signed with
+the Developer ID certificate, packaged into a signed DMG, submitted to Apple, stapled, and verified.
+The draft and exact remote asset set are revalidated immediately before upload and publication.
 
-A failed artifact build leaves the tag and draft intact. Rerun **Release** from the existing version
-tag with the same version and **Reuse semantic release** enabled.
+A failed artifact build leaves the tag and draft intact. Use **Re-run failed jobs** on the original
+**Semantic Release** run so the same tested commit, tag, and draft are reused.
 
 ## Required repository secrets
 
@@ -38,7 +40,8 @@ The release workflow requires all six values:
 - `APPLE_TEAM_ID`
 
 Secrets are validated by presence only and are never printed. The certificate is imported into an
-ephemeral keychain, and all temporary key material is removed after each architecture build.
+ephemeral keychain only after compilation, and all temporary key material is removed after each
+architecture build. Third-party actions are pinned to immutable commit SHAs and updated by Dependabot.
 
 ## Manual verification
 

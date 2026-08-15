@@ -92,13 +92,17 @@ test("successful main tests are the only automatic release trigger", () => {
   assert.match(semanticWorkflow, /github\.event\.workflow_run\.conclusion == 'success'/);
   assert.match(semanticWorkflow, /github\.event\.workflow_run\.head_sha/);
   assert.match(semanticWorkflow, /No Tests workflow run exists/);
-  assert.match(semanticWorkflow, /gh workflow run release\.yml/);
-  assert.match(semanticWorkflow, /-f reuse_semantic_release=true/);
+  assert.match(semanticWorkflow, /uses: \.\/\.github\/workflows\/release\.yml/);
+  assert.match(semanticWorkflow, /tested_sha: \$\{\{ needs\.release\.outputs\.tested_sha \}\}/);
+  assert.match(releaseWorkflow, /workflow_call:/);
+  assert.doesNotMatch(releaseWorkflow, /workflow_dispatch:/);
   assert.doesNotMatch(semanticWorkflow, /\n  push:/);
 });
 
 test("stable publication requires main ancestry, a matching draft, and Apple credentials", () => {
-  assert.match(releaseWorkflow, /git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main/);
+  assert.match(releaseWorkflow, /PARENT_SHA.*TESTED_SHA/s);
+  assert.match(releaseWorkflow, /Release commit changed files outside the semantic-release allowlist/);
+  assert.match(releaseWorkflow, /git merge-base --is-ancestor "\$TAG_SHA" origin\/main/);
   assert.match(releaseWorkflow, /must still be a draft before artifact publication/);
   assert.match(releaseWorkflow, /APPLE_CERTIFICATE_BASE64/);
   assert.match(releaseWorkflow, /APPLE_API_KEY_BASE64/);
@@ -106,6 +110,14 @@ test("stable publication requires main ancestry, a matching draft, and Apple cre
   assert.match(releaseWorkflow, /xcrun stapler validate/);
   assert.match(releaseWorkflow, /arch: \[arm64, x86_64\]/);
   assert.match(releaseWorkflow, /needs: \[prepare-release, build-macos\]/);
+  assert.ok(
+    releaseWorkflow.indexOf("Build unsigned ${{ matrix.arch }} app") <
+      releaseWorkflow.indexOf("Import Developer ID certificate and notarization key")
+  );
+  assert.match(releaseWorkflow, /CODE_SIGNING_ALLOWED=NO/);
+  assert.match(releaseWorkflow, /persist-credentials: false/);
+  assert.match(releaseWorkflow, /Tag \$RELEASE_TAG moved/);
+  assert.match(releaseWorkflow, /Remote release asset set is incomplete or unexpected/);
   assert.match(releaseWorkflow, /--draft=false/);
 });
 
@@ -116,11 +128,16 @@ test("current GitHub Actions and release dependencies receive weekly updates", (
     .map((file) => fs.readFileSync(path.join(workflowDirectory, file), "utf8"))
     .join("\n");
 
-  assert.doesNotMatch(allWorkflows, /actions\/(?:checkout|setup-node)@v4/);
-  assert.match(allWorkflows, /actions\/checkout@v7/);
-  assert.match(allWorkflows, /actions\/setup-node@v7/);
-  assert.match(allWorkflows, /actions\/upload-artifact@v7/);
-  assert.match(allWorkflows, /actions\/download-artifact@v8/);
+  const actionReferences = [...allWorkflows.matchAll(/uses:\s+([^@\s]+)@([^\s#]+)/g)];
+  assert.ok(actionReferences.length > 0);
+  for (const [, action, reference] of actionReferences) {
+    if (action.startsWith("./")) continue;
+    assert.match(reference, /^[0-9a-f]{40}$/, `${action} must use an immutable commit SHA`);
+  }
+  assert.match(allWorkflows, /actions\/checkout@[0-9a-f]{40} # v7/);
+  assert.match(allWorkflows, /actions\/setup-node@[0-9a-f]{40} # v7/);
+  assert.match(allWorkflows, /actions\/upload-artifact@[0-9a-f]{40} # v7/);
+  assert.match(allWorkflows, /actions\/download-artifact@[0-9a-f]{40} # v8/);
   assert.match(dependabotConfig, /directory: "\/\.github\/semantic-release"/);
   assert.match(dependabotConfig, /package-ecosystem: "github-actions"/);
   assert.equal((dependabotConfig.match(/interval: "weekly"/g) || []).length, 3);

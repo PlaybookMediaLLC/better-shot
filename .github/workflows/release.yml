@@ -1,25 +1,24 @@
 name: Release
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       version:
         description: "Semantic version without the v prefix"
         required: true
         type: string
+      tested_sha:
+        description: "Main commit whose Tests workflow authorized this release"
+        required: true
+        type: string
       publish_release:
         description: "Publish the draft after both notarized DMGs succeed"
         required: true
-        default: true
-        type: boolean
-      reuse_semantic_release:
-        description: "Require and reuse the matching semantic-release draft and tag"
-        required: true
-        default: true
         type: boolean
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
 
 concurrency:
   group: better-shot-stable-release
@@ -34,21 +33,26 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build_number: ${{ steps.version.outputs.build_number }}
+      release_sha: ${{ steps.provenance.outputs.release_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
+          ref: v${{ inputs.version }}
 
       - name: Validate semantic release provenance
+        id: provenance
         env:
           GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ inputs.tested_sha }}
         run: |
           if ! [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Invalid release version: $RELEASE_VERSION"
             exit 1
           fi
-          if [ "${{ inputs.reuse_semantic_release }}" != "true" ]; then
-            echo "::error::Stable publication requires reuse_semantic_release=true."
+          if ! [[ "$TESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Invalid tested commit SHA: $TESTED_SHA"
             exit 1
           fi
 
@@ -60,12 +64,59 @@ jobs:
 
           git fetch origin main --tags --force
           TAG_SHA=$(git rev-list -n1 "$RELEASE_TAG")
-          if [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
-            echo "::error::Tag $RELEASE_TAG points to $TAG_SHA, but this workflow is building $GITHUB_SHA."
+          CHECKOUT_SHA=$(git rev-parse HEAD)
+          if [ "$TAG_SHA" != "$CHECKOUT_SHA" ]; then
+            echo "::error::Tag $RELEASE_TAG points to $TAG_SHA, but checkout is $CHECKOUT_SHA."
             exit 1
           fi
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::Release commit $GITHUB_SHA is not part of origin/main."
+          if ! git merge-base --is-ancestor "$TAG_SHA" origin/main; then
+            echo "::error::Release commit $TAG_SHA is not part of origin/main."
+            exit 1
+          fi
+          PARENT_SHA=$(git rev-parse "$TAG_SHA^")
+          if [ "$PARENT_SHA" != "$TESTED_SHA" ]; then
+            echo "::error::Release commit parent $PARENT_SHA does not match tested main commit $TESTED_SHA."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$TESTED_SHA" origin/main; then
+            echo "::error::Tested commit $TESTED_SHA is not part of origin/main."
+            exit 1
+          fi
+
+          EXPECTED_SUBJECT="chore(release): $RELEASE_VERSION [skip ci]"
+          ACTUAL_SUBJECT=$(git log -1 --format=%s "$TAG_SHA")
+          if [ "$ACTUAL_SUBJECT" != "$EXPECTED_SUBJECT" ]; then
+            echo "::error::Unexpected release commit subject: $ACTUAL_SUBJECT"
+            exit 1
+          fi
+
+          EXPECTED_FILES=$(printf '%s\n' \
+            BetterShot.xcodeproj/project.pbxproj \
+            CHANGELOG.md \
+            project.yml \
+            version.json)
+          ACTUAL_FILES=$(git diff-tree --no-commit-id --name-only -r "$TAG_SHA" | LC_ALL=C sort)
+          if [ "$ACTUAL_FILES" != "$EXPECTED_FILES" ]; then
+            echo "::error::Release commit changed files outside the semantic-release allowlist."
+            diff -u <(printf '%s\n' "$EXPECTED_FILES") <(printf '%s\n' "$ACTUAL_FILES") || true
+            exit 1
+          fi
+
+          TEST_RUN=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow tests.yml \
+            --commit "$TESTED_SHA" \
+            --event push \
+            --limit 1 \
+            --json databaseId,status,conclusion \
+            --jq '.[0]')
+          if [ -z "$TEST_RUN" ] || [ "$TEST_RUN" = "null" ]; then
+            echo "::error::No Tests workflow run exists for $TESTED_SHA."
+            exit 1
+          fi
+          if [ "$(jq -r .status <<< "$TEST_RUN")" != "completed" ] || \
+             [ "$(jq -r .conclusion <<< "$TEST_RUN")" != "success" ]; then
+            echo "::error::Tests did not pass for $TESTED_SHA."
             exit 1
           fi
 
@@ -78,6 +129,7 @@ jobs:
             echo "::error::Release $RELEASE_TAG must still be a draft before artifact publication."
             exit 1
           fi
+          echo "release_sha=$TAG_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Require complete Apple signing secrets
         env:
@@ -113,6 +165,9 @@ jobs:
   build-macos:
     needs: prepare-release
     runs-on: macos-latest
+    permissions:
+      actions: read
+      contents: read
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -120,9 +175,39 @@ jobs:
         arch: [arm64, x86_64]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
+
+      - name: Build unsigned ${{ matrix.arch }} app
+        env:
+          BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
+        run: |
+          DERIVED_DATA="$RUNNER_TEMP/BetterShot-${{ matrix.arch }}"
+          xcodebuild \
+            -project BetterShot.xcodeproj \
+            -scheme BetterShot \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "$DERIVED_DATA" \
+            ARCHS="${{ matrix.arch }}" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            ENABLE_HARDENED_RUNTIME=YES \
+            MARKETING_VERSION="$RELEASE_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            build
+
+          APP_PATH="$DERIVED_DATA/Build/Products/Release/BetterShot.app"
+          test -d "$APP_PATH"
+          test "$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleShortVersionString)" = "$RELEASE_VERSION"
+          test "$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleVersion)" = "$BUILD_NUMBER"
+          ARCHITECTURES=$(lipo -archs "$APP_PATH/Contents/MacOS/BetterShot")
+          test "$ARCHITECTURES" = "${{ matrix.arch }}"
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
       - name: Import Developer ID certificate and notarization key
         env:
@@ -169,35 +254,31 @@ jobs:
             echo "SIGNING_IDENTITY=$SIGNING_IDENTITY"
           } >> "$GITHUB_ENV"
 
-      - name: Build signed ${{ matrix.arch }} app
+      - name: Sign and verify ${{ matrix.arch }} app
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
         run: |
-          DERIVED_DATA="$RUNNER_TEMP/BetterShot-${{ matrix.arch }}"
-          xcodebuild \
-            -project BetterShot.xcodeproj \
-            -scheme BetterShot \
-            -configuration Release \
-            -destination "generic/platform=macOS" \
-            -derivedDataPath "$DERIVED_DATA" \
-            ARCHS="${{ matrix.arch }}" \
-            ONLY_ACTIVE_ARCH=NO \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH" \
-            ENABLE_HARDENED_RUNTIME=YES \
-            MARKETING_VERSION="$RELEASE_VERSION" \
-            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            build
+          while IFS= read -r -d '' NESTED_CODE; do
+            codesign \
+              --force \
+              --options runtime \
+              --timestamp \
+              --sign "$SIGNING_IDENTITY" \
+              --keychain "$KEYCHAIN_PATH" \
+              "$NESTED_CODE"
+          done < <(find "$APP_PATH/Contents" -depth \
+            \( -type d \( -name '*.app' -o -name '*.appex' -o -name '*.framework' -o -name '*.plugin' -o -name '*.xpc' \) \
+            -o -type f -name '*.dylib' \) \
+            ! -path "$APP_PATH" -print0)
 
-          APP_PATH="$DERIVED_DATA/Build/Products/Release/BetterShot.app"
-          test -d "$APP_PATH"
-          test "$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleShortVersionString)" = "$RELEASE_VERSION"
-          test "$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleVersion)" = "$BUILD_NUMBER"
-          ARCHITECTURES=$(lipo -archs "$APP_PATH/Contents/MacOS/BetterShot")
-          test "$ARCHITECTURES" = "${{ matrix.arch }}"
+          codesign \
+            --force \
+            --options runtime \
+            --timestamp \
+            --entitlements Resources/BetterShot.entitlements \
+            --sign "$SIGNING_IDENTITY" \
+            --keychain "$KEYCHAIN_PATH" \
+            "$APP_PATH"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           SIGNATURE_DETAILS=$(codesign -dv --verbose=4 "$APP_PATH" 2>&1)
           grep -F "Authority=Developer ID Application:" <<< "$SIGNATURE_DETAILS"
@@ -246,7 +327,7 @@ jobs:
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
 
       - name: Upload notarized ${{ matrix.arch }} artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: better-shot-${{ matrix.arch }}
           path: |
@@ -266,9 +347,18 @@ jobs:
     if: inputs.publish_release
     needs: [prepare-release, build-macos]
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
+
       - name: Download notarized artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: better-shot-*
           path: release
@@ -283,13 +373,66 @@ jobs:
           (cd release && sha256sum -c BetterShot-*.dmg.sha256)
           (cd release && sha256sum BetterShot-*.dmg > SHA256SUMS)
 
-      - name: Upload assets and publish draft
+      - name: Revalidate draft, upload exact assets, and publish
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_RELEASE_SHA: ${{ needs.prepare-release.outputs.release_sha }}
         run: |
-          gh release upload "$RELEASE_TAG" release/* \
+          expected_assets=$(printf '%s\n' \
+            "BetterShot-$RELEASE_VERSION-arm64.dmg" \
+            "BetterShot-$RELEASE_VERSION-arm64.dmg.sha256" \
+            "BetterShot-$RELEASE_VERSION-x86_64.dmg" \
+            "BetterShot-$RELEASE_VERSION-x86_64.dmg.sha256" \
+            SHA256SUMS | LC_ALL=C sort)
+
+          revalidate_draft() {
+            git fetch origin main --tags --force
+            remote_tag_sha=$(git rev-list -n1 "$RELEASE_TAG")
+            if [ "$remote_tag_sha" != "$EXPECTED_RELEASE_SHA" ]; then
+              echo "::error::Tag $RELEASE_TAG moved from $EXPECTED_RELEASE_SHA to $remote_tag_sha."
+              exit 1
+            fi
+            release_data=$(gh release view "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,tagName,assets)
+            if [ "$(jq -r .tagName <<< "$release_data")" != "$RELEASE_TAG" ] || \
+               [ "$(jq -r .isDraft <<< "$release_data")" != "true" ]; then
+              echo "::error::Release $RELEASE_TAG is no longer the expected draft."
+              exit 1
+            fi
+            existing_assets=$(jq -r '.assets[].name' <<< "$release_data" | LC_ALL=C sort)
+            unexpected_assets=$(comm -23 \
+              <(printf '%s\n' "$existing_assets" | sed '/^$/d') \
+              <(printf '%s\n' "$expected_assets"))
+            if [ -n "$unexpected_assets" ]; then
+              echo "::error::Draft contains unexpected assets:"
+              printf '%s\n' "$unexpected_assets"
+              exit 1
+            fi
+          }
+
+          revalidate_draft
+          gh release upload "$RELEASE_TAG" \
+            "release/BetterShot-$RELEASE_VERSION-arm64.dmg" \
+            "release/BetterShot-$RELEASE_VERSION-arm64.dmg.sha256" \
+            "release/BetterShot-$RELEASE_VERSION-x86_64.dmg" \
+            "release/BetterShot-$RELEASE_VERSION-x86_64.dmg.sha256" \
+            release/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+          revalidate_draft
+          actual_assets=$(gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name' | LC_ALL=C sort)
+          if [ "$actual_assets" != "$expected_assets" ]; then
+            echo "::error::Remote release asset set is incomplete or unexpected."
+            diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$actual_assets") || true
+            exit 1
+          fi
+
+          revalidate_draft
           gh release edit "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Better Shot $RELEASE_TAG" \
