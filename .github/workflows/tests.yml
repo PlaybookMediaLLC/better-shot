@@ -1,0 +1,60 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Test release automation contracts
+        run: node --test "test/**/*.test.js"
+
+  landing:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bettershot-landing
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: bettershot-landing/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build landing site
+        run: pnpm build
+
+  app-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build universal unsigned app
+        run: |
+          xcodebuild \
+            -project BetterShot.xcodeproj \
+            -scheme BetterShot \
+            -configuration Debug \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "$RUNNER_TEMP/BetterShotDerivedData" \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          APP_PATH="$RUNNER_TEMP/BetterShotDerivedData/Build/Products/Debug/BetterShot.app"
+          test -d "$APP_PATH"
+          ARCHITECTURES=$(lipo -archs "$APP_PATH/Contents/MacOS/BetterShot")
+          grep -qw arm64 <<< "$ARCHITECTURES"
+          grep -qw x86_64 <<< "$ARCHITECTURES"

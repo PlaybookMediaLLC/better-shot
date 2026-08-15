@@ -1,0 +1,164 @@
+name: Semantic Release
+
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Analyze Conventional Commits without creating a tag or draft release"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: better-shot-semantic-release-main
+  cancel-in-progress: false
+
+env:
+  RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    name: Analyze commits and dispatch notarized release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      released: ${{ steps.result.outputs.released }}
+      version: ${{ steps.result.outputs.version }}
+      tag: ${{ steps.result.outputs.tag }}
+
+    steps:
+      - name: Checkout full release history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require the current main commit
+        id: current
+        run: |
+          git fetch --no-tags origin main
+          MAIN_SHA=$(git rev-parse origin/main)
+          if [ "$RELEASE_SHA" != "$MAIN_SHA" ]; then
+            echo "::notice::Skipping stale main run for $RELEASE_SHA; current main is $MAIN_SHA."
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.current.outputs.is_current == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: .github/semantic-release/package-lock.json
+
+      - name: Require passing tests for a manual release
+        if: steps.current.outputs.is_current == 'true' && github.event_name == 'workflow_dispatch' && inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TEST_RUN=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow tests.yml \
+            --commit "$RELEASE_SHA" \
+            --event push \
+            --limit 1 \
+            --json databaseId,status,conclusion \
+            --jq '.[0]')
+          if [ -z "$TEST_RUN" ] || [ "$TEST_RUN" = "null" ]; then
+            echo "::error::No Tests workflow run exists for $RELEASE_SHA."
+            exit 1
+          fi
+          TEST_STATUS=$(jq -r .status <<< "$TEST_RUN")
+          TEST_CONCLUSION=$(jq -r .conclusion <<< "$TEST_RUN")
+          TEST_RUN_ID=$(jq -r .databaseId <<< "$TEST_RUN")
+          if [ "$TEST_STATUS" != "completed" ] || [ "$TEST_CONCLUSION" != "success" ]; then
+            echo "::error::Tests run $TEST_RUN_ID for $RELEASE_SHA did not pass ($TEST_STATUS/$TEST_CONCLUSION)."
+            exit 1
+          fi
+          echo "Tests run $TEST_RUN_ID passed for $RELEASE_SHA."
+
+      - name: Install pinned semantic-release tooling
+        if: steps.current.outputs.is_current == 'true'
+        run: npm ci --prefix .github/semantic-release --ignore-scripts --no-audit --no-fund
+
+      - name: Analyze Conventional Commits and prepare release
+        if: steps.current.outputs.is_current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          args=(--extends ./.github/semantic-release/release.config.cjs)
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          .github/semantic-release/node_modules/.bin/semantic-release "${args[@]}"
+
+      - name: Detect created semantic release
+        id: result
+        if: steps.current.outputs.is_current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          RELEASE_TAG=$(git tag --points-at HEAD --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "No release-worthy Conventional Commits were found."
+            exit 0
+          fi
+
+          RELEASE_VERSION=${RELEASE_TAG#v}
+          PACKAGE_VERSION=$(node -p "require('./version.json').version")
+          if [ "$RELEASE_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::Semantic tag $RELEASE_TAG does not match version.json $PACKAGE_VERSION."
+            exit 1
+          fi
+
+          RELEASE_IS_DRAFT=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [ "$RELEASE_IS_DRAFT" != "true" ]; then
+            echo "::error::Semantic release $RELEASE_TAG must remain a draft until notarized artifacts finish."
+            exit 1
+          fi
+
+          {
+            echo "released=true"
+            echo "version=$RELEASE_VERSION"
+            echo "tag=$RELEASE_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch notarized macOS release
+        if: steps.result.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.result.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.result.outputs.version }}
+        run: |
+          for attempt in 1 2 3; do
+            if gh workflow run release.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$RELEASE_TAG" \
+              -f version="$RELEASE_VERSION" \
+              -f publish_release=true \
+              -f reuse_semantic_release=true; then
+              echo "Dispatched notarized release workflow for $RELEASE_TAG."
+              exit 0
+            fi
+            echo "Dispatch attempt $attempt failed; retrying."
+            sleep $((attempt * 5))
+          done
+          exit 1
