@@ -67,7 +67,7 @@ const jsonLd = {
   description:
     "Free, open-source screen capture tool for macOS. Screenshots, recordings, annotations, and effects — all in one local-first app.",
   url: "https://bettershot.site",
-  downloadUrl: "https://github.com/KartikLabhshetwar/better-shot/releases",
+  downloadUrl: "https://github.com/PlaybookMediaLLC/better-shot/releases",
   author: {
     "@type": "Person",
     name: "Kartik Labhshetwar",

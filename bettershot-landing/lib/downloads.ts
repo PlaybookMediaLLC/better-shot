@@ -1,4 +1,4 @@
-const REPO = "KartikLabhshetwar/better-shot"
+const REPO = "PlaybookMediaLLC/better-shot"
 const GITHUB_API = `https://api.github.com/repos/${REPO}/releases/latest`
 
 export interface ReleaseInfo {

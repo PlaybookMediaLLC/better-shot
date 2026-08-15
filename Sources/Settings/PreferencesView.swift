@@ -1190,7 +1190,7 @@ struct AboutTab: View {
                             .foregroundStyle(.secondary)
                             .lineSpacing(2)
 
-                        Link("GitHub", destination: URL(string: "https://github.com/KartikLabhshetwar/better-shot")!)
+                        Link("GitHub", destination: URL(string: "https://github.com/PlaybookMediaLLC/better-shot")!)
                             .font(.system(size: 12))
                     }
                 }

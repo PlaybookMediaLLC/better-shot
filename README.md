@@ -1,6 +1,6 @@
 # BetterShot
 
-[![macOS](https://img.shields.io/badge/macOS-14.0+-black.svg)](https://github.com/KartikLabhshetwar/better-shot)
+[![macOS](https://img.shields.io/badge/macOS-14.0+-black.svg)](https://github.com/PlaybookMediaLLC/better-shot)
 [![License](https://img.shields.io/badge/license-BSD%203--Clause-green.svg)](LICENSE)
 [![X (Twitter)](https://img.shields.io/badge/X-%231DA1F2.svg?style=flat&logo=X&logoColor=white)](https://x.com/code_kartik)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-%23FFDD00.svg?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/code_kartik)
@@ -65,7 +65,7 @@ brew install --cask bettershot
 
 ### Download
 
-1. Go to [Releases](https://github.com/KartikLabhshetwar/better-shot/releases)
+1. Go to [Releases](https://github.com/PlaybookMediaLLC/better-shot/releases)
 2. Download the latest `.dmg` for your architecture (Apple Silicon or Intel)
 3. Open the DMG, drag BetterShot to Applications
 4. Launch and grant permissions when prompted
@@ -73,7 +73,7 @@ brew install --cask bettershot
 ### Build from source
 
 ```bash
-git clone https://github.com/KartikLabhshetwar/better-shot.git
+git clone https://github.com/PlaybookMediaLLC/better-shot.git
 cd better-shot
 make run
 ```
@@ -167,10 +167,10 @@ BSD 3-Clause. See [LICENSE](LICENSE).
 
 ## Star History
 
-<a href="https://www.star-history.com/#KartikLabhshetwar/better-shot&type=date&legend=top-left">
+<a href="https://www.star-history.com/#PlaybookMediaLLC/better-shot&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=KartikLabhshetwar/better-shot&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=KartikLabhshetwar/better-shot&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=KartikLabhshetwar/better-shot&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=PlaybookMediaLLC/better-shot&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=PlaybookMediaLLC/better-shot&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=PlaybookMediaLLC/better-shot&type=date&legend=top-left" />
  </picture>
 </a>

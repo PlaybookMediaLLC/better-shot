@@ -27,7 +27,7 @@ export default async function Home() {
               Changelog
             </Link>
             <a
-              href="https://github.com/KartikLabhshetwar/better-shot"
+              href="https://github.com/PlaybookMediaLLC/better-shot"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[12px] text-[#111]/30 hover:text-[#111]/60 transition-colors hidden sm:block"
@@ -54,7 +54,7 @@ export default async function Home() {
           <div className="flex items-center gap-3 mt-10">
             <DownloadDropdown release={release} source="hero" />
             <a
-              href="https://github.com/KartikLabhshetwar/better-shot"
+              href="https://github.com/PlaybookMediaLLC/better-shot"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-5 h-11 text-[13px] font-medium text-[#111]/35 hover:text-[#111]/60 border border-[#111]/[0.08] hover:border-[#111]/[0.15] rounded-lg transition-all"
@@ -292,7 +292,7 @@ export default async function Home() {
               Privacy
             </Link>
             <a
-              href="https://github.com/KartikLabhshetwar/better-shot"
+              href="https://github.com/PlaybookMediaLLC/better-shot"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[11px] text-[#111]/20 hover:text-[#111]/45 transition-colors"

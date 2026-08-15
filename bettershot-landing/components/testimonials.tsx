@@ -141,7 +141,7 @@ export function TestimonialsSection() {
 
         <div className="-mt-8 flex justify-center">
           <a
-            href="https://github.com/KartikLabhshetwar/better-shot"
+            href="https://github.com/PlaybookMediaLLC/better-shot"
             target="_blank"
             rel="noopener noreferrer"
             className="group relative inline-flex items-center gap-2 rounded-full border border-[#e78a53]/30 bg-black/50 px-6 py-3 text-sm font-medium text-white transition-all hover:border-[#e78a53]/60 hover:bg-[#e78a53]/10 active:scale-95"

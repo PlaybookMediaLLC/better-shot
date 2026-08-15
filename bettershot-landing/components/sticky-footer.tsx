@@ -52,7 +52,7 @@ export function StickyFooter() {
               <ul className="space-y-2">
                 <li>
                   <a
-                    href="https://github.com/KartikLabhshetwar/better-shot"
+                    href="https://github.com/PlaybookMediaLLC/better-shot"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="hover:underline cursor-pointer transition-colors block"

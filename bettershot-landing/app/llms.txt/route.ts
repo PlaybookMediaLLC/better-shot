@@ -10,8 +10,8 @@ Better Shot is a free, native macOS screenshot tool built with Swift 6 and Swift
 ## Core Resources
 
 [Homepage]: https://bettershot.site - Landing page with features, screenshots, and download links
-[GitHub Repository]: https://github.com/KartikLabhshetwar/better-shot - Source code, issues, and releases
-[Contributing Guide]: https://github.com/KartikLabhshetwar/better-shot/blob/main/CONTRIBUTING.md - Setup, architecture, and contribution guidelines
+[GitHub Repository]: https://github.com/PlaybookMediaLLC/better-shot - Source code, issues, and releases
+[Contributing Guide]: https://github.com/PlaybookMediaLLC/better-shot/blob/main/CONTRIBUTING.md - Setup, architecture, and contribution guidelines
 
 ## Key Features
 

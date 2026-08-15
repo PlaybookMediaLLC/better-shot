@@ -76,7 +76,7 @@ export default function PrivacyPolicy() {
               Better Shot is open source under the MIT License. You can inspect the full
               source code on{" "}
               <a
-                href="https://github.com/KartikLabhshetwar/better-shot"
+                href="https://github.com/PlaybookMediaLLC/better-shot"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#1a1a1a]/70 underline underline-offset-4 hover:text-[#1a1a1a]/90 transition-colors"
@@ -101,7 +101,7 @@ export default function PrivacyPolicy() {
               </a>{" "}
               or open an issue on{" "}
               <a
-                href="https://github.com/KartikLabhshetwar/better-shot/issues"
+                href="https://github.com/PlaybookMediaLLC/better-shot/issues"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#1a1a1a]/70 underline underline-offset-4 hover:text-[#1a1a1a]/90 transition-colors"
