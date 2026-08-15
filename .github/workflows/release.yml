@@ -15,6 +15,21 @@ on:
         description: "Publish the draft after both notarized DMGs succeed"
         required: true
         type: boolean
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing semantic version without the v prefix"
+        required: true
+        type: string
+      tested_sha:
+        description: "Successful Tests commit that is the release commit parent"
+        required: true
+        type: string
+      publish_release:
+        description: "Publish the draft after both notarized DMGs succeed"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   actions: read
@@ -31,6 +46,9 @@ env:
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
     outputs:
       build_number: ${{ steps.version.outputs.build_number }}
       release_sha: ${{ steps.provenance.outputs.release_sha }}

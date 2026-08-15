@@ -111,7 +111,8 @@ test("successful main tests are the only automatic release trigger", () => {
   assert.match(semanticWorkflow, /uses: \.\/\.github\/workflows\/release\.yml/);
   assert.match(semanticWorkflow, /tested_sha: \$\{\{ needs\.release\.outputs\.tested_sha \}\}/);
   assert.match(releaseWorkflow, /workflow_call:/);
-  assert.doesNotMatch(releaseWorkflow, /workflow_dispatch:/);
+  assert.match(releaseWorkflow, /workflow_dispatch:/);
+  assert.equal((releaseWorkflow.match(/tested_sha:/g) || []).length, 2);
   assert.doesNotMatch(semanticWorkflow, /\n  push:/);
 });
 
@@ -134,6 +135,7 @@ test("stable publication requires main ancestry, a matching draft, and Apple cre
   );
   assert.match(releaseWorkflow, /CODE_SIGNING_ALLOWED=NO/);
   assert.match(releaseWorkflow, /persist-credentials: false/);
+  assert.match(releaseWorkflow, /prepare-release:[\s\S]*?contents: write/);
   assert.match(releaseWorkflow, /environment: apple-release/);
   assert.match(releaseWorkflow, /name: better-shot-unsigned-/);
   assert.match(releaseWorkflow, /pattern: better-shot-notarized-/);

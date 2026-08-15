@@ -27,8 +27,10 @@ executing repository code, then signs it with the Developer ID certificate, pack
 DMG, submits it to Apple, staples it, and verifies it.
 The draft and exact remote asset set are revalidated immediately before upload and publication.
 
-A failed artifact build leaves the tag and draft intact. Use **Re-run failed jobs** on the original
-**Semantic Release** run so the same tested commit, tag, and draft are reused.
+A failed artifact build leaves the tag and draft intact. **Re-run failed jobs** on the original
+**Semantic Release** run when no workflow fix is required. If release automation changed after the
+failure, manually run **Release** from `main` with the existing version and the successful Tests commit
+that is the parent of the generated release commit. The same provenance checks apply to manual retries.
 
 ## Required repository secrets
 
