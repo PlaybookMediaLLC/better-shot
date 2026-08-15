@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-08-15
+
+### Bug Fixes
+
+- **ci:** pin landing package manager ([be37fab](https://github.com/PlaybookMediaLLC/better-shot/commit/be37fabb78f2b4b78e2d148f8f9928cf8925180b))
+- **distribution:** use PlaybookMediaLLC releases ([91dc8e5](https://github.com/PlaybookMediaLLC/better-shot/commit/91dc8e5d4fb2df4a6d14f0eacc51f0421668c58b))
+- **release:** harden notarized publication ([6c19b7a](https://github.com/PlaybookMediaLLC/better-shot/commit/6c19b7a8fd62afe0888beb7a2997f01e3718f564))
+- **release:** isolate Apple credentials ([cb7a6c7](https://github.com/PlaybookMediaLLC/better-shot/commit/cb7a6c700e5835d1e65e5ad05f9980369f047e76))
+- **release:** normalize changelog entries ([1b2d7ce](https://github.com/PlaybookMediaLLC/better-shot/commit/1b2d7cefef07adeb49f6b5ddb3a75e6a322d36e4))
+
 ## [0.3.7] - 2026-06-07
 
 ### Added
