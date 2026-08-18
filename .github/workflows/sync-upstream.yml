@@ -31,7 +31,7 @@ jobs:
       # persist-credentials stays on (the default): the push step
       # authenticates with the persisted GITHUB_TOKEN.
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history: the merge needs the common ancestor.
           fetch-depth: 0
