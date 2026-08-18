@@ -72,3 +72,5 @@ Opinionated constraints for building better interfaces with agents.
 - MUST give empty states one clear next action
 - SHOULD limit accent color usage to one per view
 - SHOULD use existing theme or Tailwind CSS color tokens before introducing new ones
+
+Fork note: this is a PlaybookMediaLLC fork. Read CLAUDE.md before you change code. <!-- fork-seam -->
